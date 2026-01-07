@@ -7,16 +7,20 @@ const replicate = new Replicate({
 
 export async function POST(request: Request) {
   if (!process.env.REPLICATE_API_TOKEN) {
-    return NextResponse.json({ error: "Token não configurado" }, { status: 500 });
+    return NextResponse.json({ error: "Configuração ausente: API Token" }, { status: 500 });
   }
 
   try {
     const { prompt } = await request.json();
 
-    // Iniciamos a predição. O Replicate retorna o ID imediatamente.
+    if (!prompt) {
+      return NextResponse.json({ error: "Prompt é obrigatório" }, { status: 400 });
+    }
+
+    // Usando Flux Schnell: O mais rápido e fiel ao prompt
     const prediction = await replicate.predictions.create({
       model: "black-forest-labs/flux-schnell",
-      input: { 
+      input: {
         prompt: prompt,
         num_outputs: 1,
         aspect_ratio: "1:1",
@@ -24,8 +28,14 @@ export async function POST(request: Request) {
       },
     });
 
+    // Verificação de segurança para garantir que o Replicate criou o objeto
+    if (!prediction || !prediction.id) {
+      throw new Error("Replicate não retornou um ID de predição.");
+    }
+
     return NextResponse.json(prediction, { status: 201 });
   } catch (error: any) {
+    console.error("ERRO API POST:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
