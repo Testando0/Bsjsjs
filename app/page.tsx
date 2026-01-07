@@ -1,77 +1,104 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
 
-export default function Home() {
+export default function FluxGenerator() {
   const [prompt, setPrompt] = useState("");
   const [prediction, setPrediction] = useState<any>(null);
+  const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!prompt) return;
+
     setLoading(true);
     setPrediction(null);
+    setStatus("Iniciando...");
 
-    const response = await fetch("/api/predictions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
-    });
+    try {
+      // 1. SOLICITA A GERAÇÃO
+      const response = await fetch("/api/predictions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
 
-    let pred = await response.json();
-    setPrediction(pred);
+      const data = await response.json();
 
-    // Loop de Polling: Verifica status sem travar a Vercel
-    while (pred.status !== "succeeded" && pred.status !== "failed") {
-      await sleep(1500);
-      const checkRes = await fetch(`/api/predictions/${pred.id}`);
-      pred = await checkRes.json();
-      setPrediction(pred);
+      if (!response.ok || !data.id) {
+        throw new Error(data.error || "Falha ao iniciar geração");
+      }
+
+      let currentPrediction = data;
+      setPrediction(currentPrediction);
+      setStatus(currentPrediction.status);
+
+      // 2. LOOP DE POLLING (Blindado contra undefined)
+      while (
+        currentPrediction.status !== "succeeded" &&
+        currentPrediction.status !== "failed"
+      ) {
+        await sleep(2000); // Aguarda 2 segundos entre checagens
+
+        const checkRes = await fetch(`/api/predictions/${currentPrediction.id}`);
+        const updated = await checkRes.json();
+
+        if (checkRes.ok && updated.id) {
+          currentPrediction = updated;
+          setPrediction(currentPrediction);
+          setStatus(currentPrediction.status);
+        } else {
+          throw new Error("Erro ao atualizar status da imagem");
+        }
+      }
+    } catch (err: any) {
+      console.error(err);
+      setStatus("Erro: " + err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-8 font-sans">
-      <h1 className="text-4xl font-bold mb-8 flex items-center gap-2">
-        <Sparkles className="text-blue-500" /> Flux Generator
-      </h1>
+    <div className="min-h-screen bg-white text-black p-10 flex flex-col items-center font-sans">
+      <div className="max-w-xl w-full">
+        <h1 className="text-2xl font-bold mb-4 text-center">Flux Schnell - Ultra Fast</h1>
+        
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <textarea
+            className="border-2 border-black p-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Descreva a imagem..."
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            disabled={loading}
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-black text-white font-bold py-3 rounded-lg hover:bg-gray-800 disabled:bg-gray-400 transition-all"
+          >
+            {loading ? `Gerando (${status})...` : "Gerar Imagem"}
+          </button>
+        </form>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <textarea
-          className="w-full p-4 border rounded-xl shadow-sm text-black"
-          placeholder="Ex: A futuristic city made of glass, cinematic lighting..."
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          rows={3}
-        />
-        <button
-          disabled={loading || !prompt}
-          className="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold disabled:bg-gray-400 transition-all hover:bg-blue-700"
-        >
-          {loading ? "Gerando..." : "Gerar Imagem Realista"}
-        </button>
-      </form>
-
-      {prediction && (
-        <div className="mt-10">
-          {prediction.status === "succeeded" ? (
-            <img
-              src={prediction.output[0]}
-              alt="Generated"
-              className="w-full rounded-2xl shadow-2xl animate-in fade-in duration-700"
-            />
-          ) : (
-            <div className="flex flex-col items-center justify-center p-20 bg-gray-100 rounded-2xl border-dashed border-2">
-              <Loader2 className="animate-spin text-blue-500 mb-2" />
-              <p className="text-gray-500 uppercase tracking-widest text-xs">{prediction.status}</p>
-            </div>
-          )}
-        </div>
-      )}
+        {prediction && (
+          <div className="mt-10 flex flex-col items-center">
+            {prediction.output && (
+              <img
+                src={prediction.output[prediction.output.length - 1]}
+                alt="Resultado"
+                className="rounded-lg shadow-2xl w-full h-auto border border-gray-200"
+              />
+            )}
+            <p className="mt-4 text-sm text-gray-500 uppercase font-bold tracking-widest">
+              Status Final: {status}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
