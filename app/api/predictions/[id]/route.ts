@@ -7,20 +7,26 @@ const replicate = new Replicate({
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> } // Tipagem correta para Next.js moderno
 ) {
-  // Log para você ver no console da Vercel se o ID está chegando
-  console.log("Verificando predição ID:", params.id);
-
-  if (!params.id) {
-    return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
-  }
-
   try {
-    const prediction = await replicate.predictions.get(params.id);
+    // RESOLVE A PROMISE DO PARAMS (Isso evita o erro 'undefined')
+    const resolvedParams = await params;
+    const id = resolvedParams.id;
+
+    if (!id || id === "undefined") {
+      return NextResponse.json({ error: "ID inválido recebido" }, { status: 400 });
+    }
+
+    const prediction = await replicate.predictions.get(id);
+
+    if (!prediction) {
+      return NextResponse.json({ error: "Predição não encontrada" }, { status: 404 });
+    }
+
     return NextResponse.json(prediction);
   } catch (error: any) {
-    console.error("Erro no Replicate:", error);
+    console.error("ERRO API GET ID:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
